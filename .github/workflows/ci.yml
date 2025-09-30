@@ -1,5 +1,6 @@
 name: CI
 on: [push, pull_request]
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -8,4 +9,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '18'
-      - run: node --version
+      - name: Print node
+        run: node --version
