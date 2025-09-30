@@ -1,0 +1,21 @@
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://yadavsinghdhami.com/sitemap.xml
+
+# Crawl-delay for politeness
+Crawl-delay: 1
+
+# Disallow admin areas
+Disallow: /admin
+Disallow: /admin/*
+
+# Allow important pages
+Allow: /
+Allow: /work
+Allow: /blog
+Allow: /blog/*
+
+# SEO friendly robots.txt for better crawling
+# Generated for Yadav Singh Dhami's portfolio website
