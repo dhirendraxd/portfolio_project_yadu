@@ -103,6 +103,21 @@ export const useBlogPosts = () => {
   });
 };
 
+export const useAllBlogPosts = () => {
+  return useQuery({
+    queryKey: ["all-blog-posts"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("blog_posts")
+        .select("*")
+        .order("created_at", { ascending: false });
+      
+      if (error) throw error;
+      return data as BlogPost[];
+    },
+  });
+};
+
 export const useBlogPost = (slug: string) => {
   return useQuery({
     queryKey: ["blog-post", slug],

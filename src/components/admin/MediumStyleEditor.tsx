@@ -31,9 +31,9 @@ import {
   Upload,
   FileImage
 } from "lucide-react";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { useBlogPosts } from "@/hooks/useCmsData";
+import { useAllBlogPosts } from "@/hooks/useCmsData";
 
 interface BlogPost {
   id?: string;
@@ -49,7 +49,7 @@ interface BlogPost {
 
 const MediumStyleEditor: React.FC = () => {
   const { toast } = useToast();
-  const { data: blogPosts, refetch } = useBlogPosts();
+  const { data: blogPosts, refetch } = useAllBlogPosts();
   const [formData, setFormData] = useState<BlogPost>({
     title: '',
     slug: '',
@@ -66,6 +66,8 @@ const MediumStyleEditor: React.FC = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [activeButton, setActiveButton] = useState<string | null>(null);
   const [inlinePreviewHtml, setInlinePreviewHtml] = useState<string>('');
+  const [postsFilter, setPostsFilter] = useState<'all' | 'drafts' | 'published'>('all');
+  const [lastImagePreview, setLastImagePreview] = useState<string | null>(null);
 
   const generateSlug = (title: string) => {
     return title
@@ -139,12 +141,13 @@ const MediumStyleEditor: React.FC = () => {
   const handleBold = () => surroundSelection('**', '**', 'bold text');
   const handleItalic = () => surroundSelection('*', '*', 'italic text');
   const handleCodeInline = () => surroundSelection('`', '`', 'code');
-  const handleHeading2 = () => {
+  const handleHeading = (level: number) => {
     const sel = getSelection();
     if (!sel) return;
     const { start, end, value } = sel;
     const selection = value.slice(start, end) || 'Heading';
-    const lines = selection.split('\n').map(l => `## ${l}`).join('\n');
+    const prefix = '#'.repeat(level);
+    const lines = selection.split('\n').map(l => `${prefix} ${l}`).join('\n');
     const newText = value.slice(0, start) + lines + value.slice(end);
     setContentWithSelection(newText, start, start + lines.length);
   };
@@ -188,11 +191,24 @@ const MediumStyleEditor: React.FC = () => {
   const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    
+
+    // Validate type
     if (!file.type.startsWith('image/')) {
       toast({
         title: "Invalid file type",
-        description: "Please select an image file.",
+        description: "Please select an image file (PNG, JPG, GIF).",
+        variant: "destructive"
+      });
+      event.target.value = '';
+      return;
+    }
+
+    // Validate size (<= 5 MB)
+    const MAX_BYTES = 5 * 1024 * 1024;
+    if (file.size > MAX_BYTES) {
+      toast({
+        title: "Image too large",
+        description: "Please upload an image smaller than 5MB.",
         variant: "destructive"
       });
       event.target.value = '';
@@ -204,17 +220,19 @@ const MediumStyleEditor: React.FC = () => {
     // Try Supabase Storage upload first (clean URL)
     try {
       const path = `posts/${editingPost?.id || 'drafts'}/${Date.now()}-${file.name}`;
-      const { error: uploadError } = await supabaseAdmin.storage
+      const { error: uploadError } = await supabase.storage
         .from('blog-images')
         .upload(path, file, { upsert: false, contentType: file.type });
 
       if (uploadError) throw uploadError;
 
-      const { data: pub } = supabaseAdmin.storage
+      const { data: pub } = supabase.storage
         .from('blog-images')
         .getPublicUrl(path);
 
       const url = pub.publicUrl;
+
+      // Insert markdown reference and set preview
       const markdown = `![${alt}](${url})`;
       const sel = getSelection();
       if (sel) {
@@ -224,12 +242,13 @@ const MediumStyleEditor: React.FC = () => {
         setContentWithSelection(newText, pos, pos);
       }
 
-      toast({ title: 'Image uploaded', description: 'Inserted image from device.' });
+      setLastImagePreview(url);
+      toast({ title: 'Image uploaded', description: 'Inserted image from your device.' });
     } catch (err) {
-      // Fallback to base64 inline image if storage is not set up
+      // Fallback to base64 inline image if storage is not set up or user not authenticated
       const reader = new FileReader();
       reader.onload = (e) => {
-        const base64 = e.target?.result as string;
+        const base64 = e.target?.result as string; // data:image/...;base64,xxx
         const markdown = `![${alt}](${base64})`;
         const sel = getSelection();
         if (!sel) return;
@@ -237,17 +256,19 @@ const MediumStyleEditor: React.FC = () => {
         const newText = value.slice(0, start) + markdown + value.slice(end);
         const pos = start + markdown.length;
         setContentWithSelection(newText, pos, pos);
-        toast({ title: 'Inline image added', description: 'Consider enabling Supabase Storage for clean URLs.' });
+        setLastImagePreview(base64);
+        toast({ title: 'Inline image added', description: 'Using inline image since storage upload failed.' });
       };
       reader.readAsDataURL(file);
     } finally {
       event.target.value = '';
     }
   };
-  // Simple markdown to HTML converter for preview
   const markdownToHtml = (markdown: string) => {
     return markdown
+      .replace(/^# (.*$)/gim, '<h1 class="text-3xl font-bold mb-4 mt-8">$1</h1>')
       .replace(/^## (.*$)/gim, '<h2 class="text-2xl font-bold mb-4 mt-6">$1</h2>')
+      .replace(/^### (.*$)/gim, '<h3 class="text-xl font-bold mb-3 mt-5">$1</h3>')
       .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold">$1</strong>')
       .replace(/\*(.*?)\*/g, '<em class="italic">$1</em>')
       .replace(/`(.*?)`/g, '<code class="bg-muted px-1 py-0.5 rounded text-sm font-mono">$1</code>')
@@ -336,12 +357,13 @@ const MediumStyleEditor: React.FC = () => {
       };
 
       if (editingPost?.id) {
-        const { data, error } = await supabaseAdmin
-          .from('blog_posts')
-          .update(postData)
-          .eq('id', editingPost.id)
-          .select()
-          .single();
+        const { data, error } = await supabase.functions.invoke('manage-blog', {
+          body: {
+            action: 'update',
+            postId: editingPost.id,
+            data: postData
+          }
+        });
 
         if (error) throw error;
 
@@ -354,11 +376,12 @@ const MediumStyleEditor: React.FC = () => {
           description: `"${formData.title}" has been updated successfully.`
         });
       } else {
-        const { data, error } = await supabaseAdmin
-          .from('blog_posts')
-          .insert(postData)
-          .select()
-          .single();
+        const { data, error } = await supabase.functions.invoke('manage-blog', {
+          body: {
+            action: 'create',
+            data: postData
+          }
+        });
 
         if (error) throw error;
 
@@ -406,14 +429,55 @@ const MediumStyleEditor: React.FC = () => {
     });
   };
 
+  const handleTogglePublish = async (post: BlogPost) => {
+    const newStatus = !post.published;
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('manage-blog', {
+        body: {
+          action: 'update',
+          postId: post.id,
+          data: {
+            ...post,
+            published: newStatus
+          }
+        }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: newStatus ? "Post published!" : "Post unpublished!",
+        description: `"${post.title}" has been ${newStatus ? 'published' : 'unpublished'}.`
+      });
+
+      refetch();
+
+      // If we're editing this post, update the form
+      if (editingPost?.id === post.id) {
+        setFormData({ ...data, tags: data.tags || [] });
+        setEditingPost(data);
+      }
+    } catch (error: any) {
+      console.error('Error toggling publish status:', error);
+      toast({
+        title: "Error updating post",
+        description: error.message || "Something went wrong. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
   const handleDeletePost = async (postId: string) => {
     if (!confirm("Are you sure you want to delete this post?")) return;
     
     try {
-      const { error } = await supabaseAdmin
-        .from('blog_posts')
-        .delete()
-        .eq('id', postId);
+      const { error } = await supabase.functions.invoke('manage-blog', {
+        body: {
+          action: 'delete',
+          postId: postId
+        }
+      });
 
       if (error) throw error;
 
@@ -547,13 +611,56 @@ const MediumStyleEditor: React.FC = () => {
 
       <div className="max-w-4xl mx-auto px-6 py-8">
         {/* Title Input */}
-        <div className="mb-8">
+        <div className="mb-6">
           <Input
             placeholder="Title"
             value={formData.title}
             onChange={(e) => handleTitleChange(e.target.value)}
             className="text-4xl font-bold border-none px-0 py-4 placeholder:text-muted-foreground/60 focus-visible:ring-0 shadow-none bg-transparent"
             style={{ fontSize: '2.5rem', lineHeight: '1.2' }}
+          />
+        </div>
+
+        {/* Slug Preview */}
+        {formData.slug && (
+          <div className="mb-4 px-3 py-2 bg-muted/30 rounded-lg text-sm text-muted-foreground flex items-center gap-2">
+            <ExternalLink className="h-3 w-3" />
+            <span>URL: /blog/{formData.slug}</span>
+          </div>
+        )}
+
+        {/* Tags Input */}
+        <div className="mb-6">
+          <div className="flex flex-wrap gap-2 mb-2">
+            {formData.tags.map((tag, index) => (
+              <Badge key={index} variant="secondary" className="px-3 py-1">
+                {tag}
+                <button
+                  onClick={() => {
+                    const newTags = formData.tags.filter((_, i) => i !== index);
+                    setFormData(prev => ({ ...prev, tags: newTags }));
+                  }}
+                  className="ml-2 hover:text-destructive"
+                >
+                  ✕
+                </button>
+              </Badge>
+            ))}
+          </div>
+          <Input
+            placeholder="Add tags (press Enter)"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                const input = e.currentTarget;
+                const tag = input.value.trim();
+                if (tag && !formData.tags.includes(tag)) {
+                  setFormData(prev => ({ ...prev, tags: [...prev.tags, tag] }));
+                  input.value = '';
+                }
+              }
+            }}
+            className="border-dashed"
           />
         </div>
 
@@ -579,15 +686,29 @@ const MediumStyleEditor: React.FC = () => {
               <Italic className="h-4 w-4" />
             </Button>
             <div className="w-px h-6 bg-border mx-1" />
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className={`h-9 w-9 p-0 transition-all duration-200 hover:bg-primary/10 hover:scale-110 ${activeButton === 'heading' ? 'bg-primary/20 scale-110' : ''}`}
-              onClick={() => handleButtonClick('heading', handleHeading2)} 
-              title="Heading 2"
-            >
-              <Heading2 className="h-4 w-4" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className={`h-9 w-9 p-0 transition-all duration-200 hover:bg-primary/10 hover:scale-110 ${activeButton === 'heading' ? 'bg-primary/20 scale-110' : ''}`}
+                  title="Heading"
+                >
+                  <Heading2 className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="bg-background/95 backdrop-blur-sm">
+                <DropdownMenuItem onClick={() => handleButtonClick('heading', () => handleHeading(1))}>
+                  <span className="text-2xl font-bold">H1</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleButtonClick('heading', () => handleHeading(2))}>
+                  <span className="text-xl font-bold">H2</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleButtonClick('heading', () => handleHeading(3))}>
+                  <span className="text-lg font-bold">H3</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button 
               variant="ghost" 
               size="sm" 
@@ -640,16 +761,17 @@ const MediumStyleEditor: React.FC = () => {
                 type="file"
                 accept="image/*"
                 onChange={handleImageUpload}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                title="Upload Image"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                title="Upload Image from PC"
               />
               <Button 
-                variant="ghost" 
+                variant="outline" 
                 size="sm" 
-                className="h-9 w-9 p-0 transition-all duration-200 hover:bg-primary/10 hover:scale-110"
-                title="Upload Image from Device"
+                className="h-9 px-3 transition-all duration-200 hover:bg-primary/10 bg-primary/5 border-primary/20"
+                title="Upload Image from PC"
               >
-                <Upload className="h-4 w-4" />
+                <Upload className="h-4 w-4 mr-1" />
+                <span className="text-xs">Upload</span>
               </Button>
             </div>
             <Button 
@@ -675,6 +797,13 @@ const MediumStyleEditor: React.FC = () => {
             </Button>
           </div>
         </div>
+
+        {lastImagePreview && (
+          <div className="mb-4 p-3 border rounded-md bg-card/50 flex items-center gap-3">
+            <img src={lastImagePreview} alt="Last uploaded preview" className="h-16 w-16 object-cover rounded" />
+            <div className="text-sm text-muted-foreground">Last image inserted into the editor.</div>
+          </div>
+        )}
 
         {/* Content Editor */}
         <div className="mb-8">
@@ -796,42 +925,94 @@ const MediumStyleEditor: React.FC = () => {
         {/* Sidebar with existing posts */}
         {blogPosts && blogPosts.length > 0 && (
           <div className="border-t pt-8">
-            <h3 className="text-lg font-medium mb-4">Your Posts</h3>
-            <div className="grid gap-3">
-              {blogPosts.slice(0, 5).map((post) => (
-                <div
-                  key={post.id}
-                  className="p-3 border rounded-lg hover:bg-muted/50 transition-colors"
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium">Your Posts</h3>
+              <div className="flex gap-2">
+                <Button 
+                  variant={postsFilter === 'all' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setPostsFilter('all')}
                 >
-                  <div className="flex items-center justify-between">
-                    <div 
-                      className="flex-1 cursor-pointer"
-                      onClick={() => handleLoadPost(post)}
-                    >
-                      <h4 className="font-medium">{post.title}</h4>
-                      <p className="text-sm text-muted-foreground">
-                        {post.excerpt?.substring(0, 80)}...
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={post.published ? "default" : "secondary"} className="text-xs">
-                        {post.published ? "Published" : "Draft"}
-                      </Badge>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeletePost(post.id);
-                        }}
-                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                  All ({blogPosts.length})
+                </Button>
+                <Button 
+                  variant={postsFilter === 'drafts' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setPostsFilter('drafts')}
+                >
+                  Drafts ({blogPosts.filter(p => !p.published).length})
+                </Button>
+                <Button 
+                  variant={postsFilter === 'published' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setPostsFilter('published')}
+                >
+                  Published ({blogPosts.filter(p => p.published).length})
+                </Button>
+              </div>
+            </div>
+            <div className="grid gap-3 max-h-96 overflow-y-auto">
+              {blogPosts
+                .filter(post => {
+                  if (postsFilter === 'drafts') return !post.published;
+                  if (postsFilter === 'published') return post.published;
+                  return true;
+                })
+                .map((post) => (
+                  <div
+                    key={post.id}
+                    className="p-3 border rounded-lg hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div 
+                        className="flex-1 cursor-pointer"
+                        onClick={() => handleLoadPost(post)}
                       >
-                        ✕
-                      </Button>
+                        <h4 className="font-medium">{post.title}</h4>
+                        <p className="text-sm text-muted-foreground">
+                          {post.excerpt?.substring(0, 80)}...
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <Badge 
+                          variant={post.published ? "default" : "secondary"} 
+                          className="text-xs cursor-pointer hover:opacity-80"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleTogglePublish(post);
+                          }}
+                          title={post.published ? "Click to unpublish" : "Click to publish"}
+                        >
+                          {post.published ? "Published" : "Draft"}
+                        </Badge>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleLoadPost(post);
+                          }}
+                          className="h-8 w-8 p-0 text-muted-foreground hover:text-primary"
+                          title="Edit post"
+                        >
+                          <Edit3 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeletePost(post.id);
+                          }}
+                          className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                          title="Delete post"
+                        >
+                          ✕
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
             </div>
           </div>
         )}

@@ -15,7 +15,7 @@ import {
   Tag,
   Image as ImageIcon
 } from "lucide-react";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
 interface BlogPost {
@@ -130,10 +130,13 @@ const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
       };
 
       if (blogPost?.id) {
-        const { error } = await supabaseAdmin
-          .from('blog_posts')
-          .update(postData)
-          .eq('id', blogPost.id);
+        const { error } = await supabase.functions.invoke('manage-blog', {
+          body: {
+            action: 'update',
+            postId: blogPost.id,
+            data: postData
+          }
+        });
 
         if (error) throw error;
 
@@ -142,9 +145,12 @@ const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
           description: `"${formData.title}" has been updated successfully.`
         });
       } else {
-        const { error } = await supabaseAdmin
-          .from('blog_posts')
-          .insert(postData);
+        const { error } = await supabase.functions.invoke('manage-blog', {
+          body: {
+            action: 'create',
+            data: postData
+          }
+        });
 
         if (error) throw error;
 
