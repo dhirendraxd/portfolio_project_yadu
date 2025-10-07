@@ -54,7 +54,7 @@ const Blog = () => {
               featuredPost.title,
               featuredPost.excerpt || featuredPost.title,
               featuredPost.created_at,
-              featuredPost.image_url,
+              featuredPost.featured_image_url,
               featuredPost.tags
             )] : [])
           ]
@@ -176,10 +176,10 @@ const Blog = () => {
               {featuredPost && (
                 <div className="group glass-card rounded-4xl overflow-hidden shadow-glass hover:shadow-glass-hover transition-all duration-500 hover-lift">
                   <div className="grid lg:grid-cols-2 gap-0">
-                    {featuredPost.image_url && (
+                    {featuredPost.featured_image_url && (
                       <div className="relative h-72 lg:h-auto overflow-hidden">
                         <img 
-                          src={featuredPost.image_url} 
+                          src={featuredPost.featured_image_url} 
                           alt={featuredPost.title}
                           className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                         />
@@ -251,10 +251,10 @@ const Blog = () => {
                            style={{ animationDelay: `${index * 0.1}s` }}>
                         <Link to={`/blog/${post.slug}`} className="block">
                           <CardContent className="p-0">
-                          {post.image_url && (
+                          {post.featured_image_url && (
                             <div className="relative h-52 overflow-hidden">
                               <img 
-                                src={post.image_url} 
+                                src={post.featured_image_url} 
                                 alt={post.title}
                                 className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                               />

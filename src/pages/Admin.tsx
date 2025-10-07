@@ -4,7 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LogOut, FileText, Share2, BarChart3, Settings, Home } from "lucide-react";
+import { LogOut, FileText, Share2, BarChart3, Settings, Home, Loader2 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import MediumStyleEditor from "@/components/admin/MediumStyleEditor";
 import SocialMediaManager from "@/components/admin/SocialMediaManager";
@@ -12,13 +13,12 @@ import SiteSettings from "@/components/admin/SiteSettings";
 
 const Admin = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
-
-  // Simple password authentication (replace with proper auth in production)
-  const ADMIN_PASSWORD = "yadav2025"; // Change this to a secure password
 
   useEffect(() => {
     const savedAuth = localStorage.getItem("admin_authenticated");
@@ -27,20 +27,53 @@ const Admin = () => {
     }
   }, []);
 
-  const handleLogin = () => {
-    if (password === ADMIN_PASSWORD) {
-      setIsAuthenticated(true);
-      localStorage.setItem("admin_authenticated", "true");
+  const handleLogin = async () => {
+    if (!username || !password) {
       toast({
-        title: "Welcome!",
-        description: "Successfully logged into admin panel.",
-      });
-    } else {
-      toast({
-        title: "Access Denied",
-        description: "Incorrect password.",
+        title: "Missing Credentials",
+        description: "Please enter both username and password.",
         variant: "destructive",
       });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("site_settings")
+        .select("*")
+        .in("key", ["admin_username", "admin_password"]);
+
+      if (error) throw error;
+
+      const credentials: any = {};
+      data?.forEach((setting: any) => {
+        credentials[setting.key] = setting.value;
+      });
+
+      if (username === credentials.admin_username && password === credentials.admin_password) {
+        setIsAuthenticated(true);
+        localStorage.setItem("admin_authenticated", "true");
+        toast({
+          title: "Welcome!",
+          description: "Successfully logged into admin panel.",
+        });
+      } else {
+        toast({
+          title: "Access Denied",
+          description: "Incorrect username or password.",
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      console.error('Login error:', error);
+      toast({
+        title: "Login Error",
+        description: "Failed to verify credentials. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -56,17 +89,29 @@ const Admin = () => {
         <Card className="w-full max-w-md glass-card">
           <CardHeader className="text-center">
             <CardTitle className="text-2xl font-medium">Admin Access</CardTitle>
-            <p className="text-muted-foreground">Enter password to continue</p>
+            <p className="text-muted-foreground">Enter credentials to continue</p>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyPress={(e) => e.key === "Enter" && handleLogin()}
-            />
-            <Button onClick={handleLogin} className="w-full">
+            <div className="space-y-2">
+              <Input
+                type="text"
+                placeholder="Username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                onKeyPress={(e) => e.key === "Enter" && handleLogin()}
+              />
+            </div>
+            <div className="space-y-2">
+              <Input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyPress={(e) => e.key === "Enter" && handleLogin()}
+              />
+            </div>
+            <Button onClick={handleLogin} className="w-full" disabled={loading}>
+              {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Login
             </Button>
           </CardContent>
