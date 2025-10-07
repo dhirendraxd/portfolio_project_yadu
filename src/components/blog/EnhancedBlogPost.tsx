@@ -55,6 +55,17 @@ const EnhancedBlogPost: React.FC<EnhancedBlogPostProps> = ({ blogPost }) => {
       .replace(/^### (.*$)/gim, '<h3 id="$1">$1</h3>')
       .replace(/^## (.*$)/gim, '<h2 id="$1">$1</h2>')
       .replace(/^# (.*$)/gim, '<h1 id="$1">$1</h1>')
+      .replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"(left|right|center)")?\)/gim, (match, alt, url, position) => {
+        let className = 'w-full rounded-lg my-6 shadow-md';
+        if (position === 'left') {
+          className = 'float-left mr-6 mb-6 max-w-sm rounded-lg shadow-md';
+        } else if (position === 'right') {
+          className = 'float-right ml-6 mb-6 max-w-sm rounded-lg shadow-md';
+        } else if (position === 'center') {
+          className = 'mx-auto block max-w-3xl rounded-lg my-6 shadow-md';
+        }
+        return `<img src="${url}" alt="${alt}" class="${className}" loading="lazy" />`;
+      })
       .replace(/\*\*(.*)\*\*/gim, '<strong>$1</strong>')
       .replace(/\*(.*)\*/gim, '<em>$1</em>')
       .replace(/`(.*?)`/gim, '<code class="bg-muted px-1 py-0.5 rounded text-sm">$1</code>')
@@ -211,7 +222,7 @@ const EnhancedBlogPost: React.FC<EnhancedBlogPostProps> = ({ blogPost }) => {
 
                   {/* Article Content */}
                   <div 
-                    className="prose prose-lg max-w-none mb-12"
+                    className="prose prose-lg max-w-none mb-12 overflow-hidden"
                     style={{
                       fontSize: '1.125rem',
                       lineHeight: '1.75',

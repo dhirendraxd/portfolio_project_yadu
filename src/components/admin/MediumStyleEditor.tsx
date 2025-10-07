@@ -179,7 +179,15 @@ const MediumStyleEditor: React.FC = () => {
     const url = window.prompt('Image URL', 'https://');
     if (!url) return;
     const alt = window.prompt('Alt text', 'image');
-    const markdown = `![${alt || 'image'}](${url})`;
+    const position = window.prompt('Image position (left, right, center, or leave empty for default)', '');
+    
+    let markdown = `![${alt || 'image'}](${url})`;
+    
+    // Add position indicator if specified
+    if (position && ['left', 'right', 'center'].includes(position.toLowerCase())) {
+      markdown = `![${alt || 'image'}](${url} "${position}")`;
+    }
+    
     const sel = getSelection();
     if (!sel) return;
     const { start, end, value } = sel;
@@ -275,8 +283,18 @@ const MediumStyleEditor: React.FC = () => {
       .replace(/^> (.*$)/gim, '<blockquote class="border-l-4 border-primary pl-4 italic my-4">$1</blockquote>')
       .replace(/^- (.*$)/gim, '<li class="list-disc ml-4">$1</li>')
       .replace(/^\d+\. (.*$)/gim, '<li class="list-decimal ml-4">$1</li>')
+      .replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"(left|right|center)")?\)/g, (match, alt, url, position) => {
+        let className = 'max-w-full h-auto rounded-lg my-4';
+        if (position === 'left') {
+          className = 'float-left mr-4 mb-4 max-w-xs rounded-lg';
+        } else if (position === 'right') {
+          className = 'float-right ml-4 mb-4 max-w-xs rounded-lg';
+        } else if (position === 'center') {
+          className = 'mx-auto block max-w-2xl rounded-lg my-4';
+        }
+        return `<img src="${url}" alt="${alt}" class="${className}" />`;
+      })
       .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-primary underline" target="_blank">$1</a>')
-      .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="max-w-full h-auto rounded-lg my-4" />')
       .replace(/\n/g, '<br>');
   };
 
@@ -629,6 +647,58 @@ const MediumStyleEditor: React.FC = () => {
           </div>
         )}
 
+        {/* Thumbnail/Featured Image Section */}
+        <div className="mb-6 p-4 border-2 border-dashed rounded-lg bg-muted/20">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <FileImage className="h-5 w-5 text-muted-foreground" />
+              <span className="font-medium text-sm">Post Thumbnail</span>
+            </div>
+            {formData.featured_image_url && (
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setFormData(prev => ({ ...prev, featured_image_url: '' }))}
+              >
+                Remove
+              </Button>
+            )}
+          </div>
+          
+          {formData.featured_image_url ? (
+            <div className="relative group">
+              <img
+                src={formData.featured_image_url}
+                alt="Thumbnail preview"
+                className="w-full h-48 object-cover rounded-lg"
+              />
+              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-2">
+                <Button 
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setShowFeaturedImageDialog(true)}
+                >
+                  Change
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <p className="text-sm text-muted-foreground mb-3">
+                Add a thumbnail image that will appear in blog listings
+              </p>
+              <Button 
+                variant="outline"
+                size="sm"
+                onClick={() => setShowFeaturedImageDialog(true)}
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                Add Thumbnail
+              </Button>
+            </div>
+          )}
+        </div>
+
         {/* Tags Input */}
         <div className="mb-6">
           <div className="flex flex-wrap gap-2 mb-2">
@@ -866,13 +936,91 @@ const MediumStyleEditor: React.FC = () => {
         {showFeaturedImageDialog && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
             <div className="bg-background rounded-lg p-6 w-full max-w-md">
-              <h3 className="text-lg font-medium mb-4">Featured Image</h3>
+              <h3 className="text-lg font-medium mb-4">Featured Image / Thumbnail</h3>
               <div className="space-y-4">
-                <Input
-                  placeholder="Image URL"
-                  value={formData.featured_image_url || ''}
-                  onChange={(e) => setFormData(prev => ({ ...prev, featured_image_url: e.target.value }))}
-                />
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Option 1: Upload Image</label>
+                  <div className="relative">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        
+                        if (!file.type.startsWith('image/')) {
+                          toast({ title: "Invalid file type", description: "Please upload an image file.", variant: "destructive" });
+                          return;
+                        }
+                        
+                        const MAX_BYTES = 5 * 1024 * 1024;
+                        if (file.size > MAX_BYTES) {
+                          toast({ title: "Image too large", description: "Please upload an image smaller than 5MB.", variant: "destructive" });
+                          return;
+                        }
+                        
+                        try {
+                          const path = `thumbnails/${Date.now()}-${file.name}`;
+                          const { error: uploadError } = await supabase.storage
+                            .from('blog-images')
+                            .upload(path, file, { upsert: false, contentType: file.type });
+                          
+                          if (uploadError) throw uploadError;
+                          
+                          const { data: pub } = supabase.storage
+                            .from('blog-images')
+                            .getPublicUrl(path);
+                          
+                          setFormData(prev => ({ ...prev, featured_image_url: pub.publicUrl }));
+                          toast({ title: 'Thumbnail uploaded', description: 'Successfully uploaded thumbnail image.' });
+                        } catch (err) {
+                          toast({ title: 'Upload failed', description: 'Failed to upload thumbnail. Please try URL instead.', variant: "destructive" });
+                        }
+                        e.target.value = '';
+                      }}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                    />
+                    <Button variant="outline" className="w-full">
+                      <Upload className="h-4 w-4 mr-2" />
+                      Choose Image File
+                    </Button>
+                  </div>
+                </div>
+                
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-background px-2 text-muted-foreground">Or</span>
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Option 2: Image URL</label>
+                  <Input
+                    placeholder="https://example.com/image.jpg"
+                    value={formData.featured_image_url || ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, featured_image_url: e.target.value }))}
+                  />
+                </div>
+                
+                {formData.featured_image_url && (
+                  <div className="p-2 border rounded-lg bg-muted/50">
+                    <p className="text-xs text-muted-foreground mb-2">Preview:</p>
+                    <img
+                      src={formData.featured_image_url}
+                      alt="Featured preview"
+                      className="w-full h-48 object-cover rounded"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        const errorMsg = e.currentTarget.nextElementSibling as HTMLElement;
+                        if (errorMsg) errorMsg.classList.remove('hidden');
+                      }}
+                    />
+                    <p className="text-xs text-destructive hidden mt-2">Failed to load image from URL</p>
+                  </div>
+                )}
                 <div className="flex gap-2 justify-end">
                   <Button variant="outline" onClick={() => setShowFeaturedImageDialog(false)}>
                     Cancel

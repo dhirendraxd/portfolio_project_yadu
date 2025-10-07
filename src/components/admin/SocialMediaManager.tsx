@@ -318,6 +318,21 @@ const SocialMediaManager = () => {
                   value={formData.image_url}
                   onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
                 />
+                {formData.image_url && (
+                  <div className="mt-2 p-2 border rounded-lg bg-muted/50">
+                    <p className="text-xs text-muted-foreground mb-2">Image Preview:</p>
+                    <img
+                      src={formData.image_url}
+                      alt="Preview"
+                      className="w-full max-w-md h-48 object-cover rounded"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        e.currentTarget.nextElementSibling!.classList.remove('hidden');
+                      }}
+                    />
+                    <p className="text-xs text-destructive hidden">Failed to load image</p>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center space-x-2">
