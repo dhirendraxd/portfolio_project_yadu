@@ -34,6 +34,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAllBlogPosts } from "@/hooks/useCmsData";
+import VisualMarkdownEditor from "@/components/admin/VisualMarkdownEditor";
 
 interface BlogPost {
   id?: string;
@@ -68,7 +69,7 @@ const MediumStyleEditor: React.FC = () => {
   const [inlinePreviewHtml, setInlinePreviewHtml] = useState<string>('');
   const [postsFilter, setPostsFilter] = useState<'all' | 'drafts' | 'published'>('all');
   const [lastImagePreview, setLastImagePreview] = useState<string | null>(null);
-
+  const [visualMode, setVisualMode] = useState(false);
   const generateSlug = (title: string) => {
     return title
       .toLowerCase()
@@ -251,6 +252,7 @@ const MediumStyleEditor: React.FC = () => {
       }
 
       setLastImagePreview(url);
+      setVisualMode(true);
       toast({ title: 'Image uploaded', description: 'Inserted image from your device.' });
     } catch (err) {
       // Fallback to base64 inline image if storage is not set up or user not authenticated
@@ -265,6 +267,7 @@ const MediumStyleEditor: React.FC = () => {
         const pos = start + markdown.length;
         setContentWithSelection(newText, pos, pos);
         setLastImagePreview(base64);
+        setVisualMode(true);
         toast({ title: 'Inline image added', description: 'Using inline image since storage upload failed.' });
       };
       reader.readAsDataURL(file);
@@ -856,6 +859,15 @@ const MediumStyleEditor: React.FC = () => {
           </div>
           <div className="flex items-center gap-2">
             <Button 
+              variant={visualMode ? "default" : "ghost"}
+              size="sm" 
+              className="h-9 px-3 transition-all duration-200"
+              onClick={() => setVisualMode(!visualMode)}
+              title="Toggle Visual Mode"
+            >
+              Visual
+            </Button>
+            <Button 
               variant={showPreview ? "default" : "ghost"}
               size="sm" 
               className="h-9 px-3 transition-all duration-200"
@@ -881,17 +893,24 @@ const MediumStyleEditor: React.FC = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div>
                 <h3 className="text-sm font-medium text-muted-foreground mb-2">Write</h3>
-                <Textarea
-                  placeholder="Tell your story..."
-                  value={formData.content}
-                  onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
-                  onSelect={updateInlinePreview}
-                  onKeyUp={updateInlinePreview}
-                  onKeyDown={handleEditorKeyDown}
-                  ref={textareaRef}
-                  className="min-h-[500px] text-lg leading-relaxed border rounded-lg p-4 resize-none focus-visible:ring-2 focus-visible:ring-primary/20 transition-all duration-200"
-                  style={{ fontSize: '1.125rem', lineHeight: '1.75' }}
-                />
+                {visualMode ? (
+                  <VisualMarkdownEditor
+                    value={formData.content}
+                    onChange={(markdown) => setFormData(prev => ({ ...prev, content: markdown }))}
+                  />
+                ) : (
+                  <Textarea
+                    placeholder="Tell your story..."
+                    value={formData.content}
+                    onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
+                    onSelect={updateInlinePreview}
+                    onKeyUp={updateInlinePreview}
+                    onKeyDown={handleEditorKeyDown}
+                    ref={textareaRef}
+                    className="min-h-[500px] text-lg leading-relaxed border rounded-lg p-4 resize-none focus-visible:ring-2 focus-visible:ring-primary/20 transition-all duration-200"
+                    style={{ fontSize: '1.125rem', lineHeight: '1.75' }}
+                  />
+                )}
                 <div className="mt-3">
                   <div className="text-xs text-muted-foreground mb-1">Inline view</div>
                   <div
@@ -910,17 +929,24 @@ const MediumStyleEditor: React.FC = () => {
             </div>
           ) : (
             <>
-              <Textarea
-                placeholder="Tell your story..."
-                value={formData.content}
-                onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
-                onSelect={updateInlinePreview}
-                onKeyUp={updateInlinePreview}
-                onKeyDown={handleEditorKeyDown}
-                ref={textareaRef}
-                className="min-h-[500px] text-lg leading-relaxed border-none px-0 resize-none focus-visible:ring-0 shadow-none bg-transparent transition-all duration-200"
-                style={{ fontSize: '1.125rem', lineHeight: '1.75' }}
-              />
+              {visualMode ? (
+                <VisualMarkdownEditor
+                  value={formData.content}
+                  onChange={(markdown) => setFormData(prev => ({ ...prev, content: markdown }))}
+                />
+              ) : (
+                <Textarea
+                  placeholder="Tell your story..."
+                  value={formData.content}
+                  onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
+                  onSelect={updateInlinePreview}
+                  onKeyUp={updateInlinePreview}
+                  onKeyDown={handleEditorKeyDown}
+                  ref={textareaRef}
+                  className="min-h-[500px] text-lg leading-relaxed border-none px-0 resize-none focus-visible:ring-0 shadow-none bg-transparent transition-all duration-200"
+                  style={{ fontSize: '1.125rem', lineHeight: '1.75' }}
+                />
+              )}
               <div className="mt-3">
                 <div className="text-xs text-muted-foreground mb-1">Inline view</div>
                 <div
