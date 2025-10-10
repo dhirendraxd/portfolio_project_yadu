@@ -1,5 +1,6 @@
 
 import type { Config } from "tailwindcss";
+// new changes commiting to new 
 
 export default {
 	darkMode: ["class"],
