@@ -4,116 +4,185 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LogOut, FileText, Share2, BarChart3, Settings, Home, Loader2 } from "lucide-react";
+import { LogOut, FileText, Share2, Settings, Home, Loader2, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { User } from "@supabase/supabase-js";
 import MediumStyleEditor from "@/components/admin/MediumStyleEditor";
 import SocialMediaManager from "@/components/admin/SocialMediaManager";
 import SiteSettings from "@/components/admin/SiteSettings";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const Admin = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [username, setUsername] = useState("");
+  const [user, setUser] = useState<User | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
   useEffect(() => {
-    const savedAuth = localStorage.getItem("admin_authenticated");
-    if (savedAuth === "true") {
-      setIsAuthenticated(true);
-    }
+    // Set up auth state listener FIRST
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        setUser(session?.user ?? null);
+        
+        if (session?.user) {
+          // Check if user has admin role
+          setTimeout(async () => {
+            await checkAdminRole(session.user.id);
+          }, 0);
+        } else {
+          setIsAdmin(false);
+          setLoading(false);
+        }
+      }
+    );
+
+    // THEN check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      
+      if (session?.user) {
+        checkAdminRole(session.user.id);
+      } else {
+        setLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const handleLogin = async () => {
-    if (!username || !password) {
-      toast({
-        title: "Missing Credentials",
-        description: "Please enter both username and password.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setLoading(true);
+  const checkAdminRole = async (userId: string) => {
     try {
       const { data, error } = await supabase
-        .from("site_settings")
-        .select("*")
-        .in("key", ["admin_username", "admin_password"]);
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId)
+        .eq("role", "admin")
+        .maybeSingle();
 
-      if (error) throw error;
-
-      const credentials: any = {};
-      data?.forEach((setting: any) => {
-        credentials[setting.key] = setting.value;
-      });
-
-      if (username === credentials.admin_username && password === credentials.admin_password) {
-        setIsAuthenticated(true);
-        localStorage.setItem("admin_authenticated", "true");
-        toast({
-          title: "Welcome!",
-          description: "Successfully logged into admin panel.",
-        });
-      } else {
+      if (error && error.code !== 'PGRST116') throw error;
+      
+      setIsAdmin(!!data);
+      
+      if (!data) {
         toast({
           title: "Access Denied",
-          description: "Incorrect username or password.",
+          description: "You don't have admin privileges.",
           variant: "destructive",
         });
       }
     } catch (error: any) {
-      console.error('Login error:', error);
-      toast({
-        title: "Login Error",
-        description: "Failed to verify credentials. Please try again.",
-        variant: "destructive",
-      });
+      console.error('Error checking admin role:', error);
+      setIsAdmin(false);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    localStorage.removeItem("admin_authenticated");
+  const handleLogin = async () => {
+    if (!email || !password) {
+      toast({
+        title: "Missing Credentials",
+        description: "Please enter both email and password.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setAuthLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+
+      // The auth state change listener will handle the rest
+      toast({
+        title: "Welcome!",
+        description: "Successfully logged in.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Login Failed",
+        description: error.message || "Invalid email or password.",
+        variant: "destructive",
+      });
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     navigate("/");
   };
 
-  if (!isAuthenticated) {
+  if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted/20">
-        <Card className="w-full max-w-md glass-card">
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!user || !isAdmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted/20 p-4">
+        <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <CardTitle className="text-2xl font-medium">Admin Access</CardTitle>
-            <p className="text-muted-foreground">Enter credentials to continue</p>
+            <p className="text-muted-foreground">Sign in with your admin account</p>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Input
-                type="text"
-                placeholder="Username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                onKeyPress={(e) => e.key === "Enter" && handleLogin()}
-              />
-            </div>
-            <div className="space-y-2">
-              <Input
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onKeyPress={(e) => e.key === "Enter" && handleLogin()}
-              />
-            </div>
-            <Button onClick={handleLogin} className="w-full" disabled={loading}>
-              {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Login
-            </Button>
+            {!user && (
+              <>
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Secure Authentication</AlertTitle>
+                  <AlertDescription>
+                    Admin access requires proper Supabase authentication with admin role.
+                  </AlertDescription>
+                </Alert>
+                <div className="space-y-2">
+                  <Input
+                    type="email"
+                    placeholder="Email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    onKeyPress={(e) => e.key === "Enter" && handleLogin()}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Input
+                    type="password"
+                    placeholder="Password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onKeyPress={(e) => e.key === "Enter" && handleLogin()}
+                  />
+                </div>
+                <Button onClick={handleLogin} className="w-full" disabled={authLoading}>
+                  {authLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Sign In
+                </Button>
+              </>
+            )}
+            {user && !isAdmin && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Access Denied</AlertTitle>
+                <AlertDescription>
+                  Your account doesn't have admin privileges. Contact the site administrator.
+                </AlertDescription>
+              </Alert>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -204,7 +273,7 @@ const Admin = () => {
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <BarChart3 className="h-5 w-5 text-primary" />
+                    <Settings className="h-5 w-5 text-primary" />
                     Quick Stats
                   </CardTitle>
                 </CardHeader>

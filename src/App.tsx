@@ -10,6 +10,7 @@ import Blog from "./pages/Blog";
 import BlogPost from "./pages/BlogPost";
 import Work from "./pages/Work";
 import Admin from "./pages/Admin";
+import ViewResume from "./pages/ViewResume";
 import NotFound from "./pages/NotFound";
 import Navigation from "./components/Navigation";
 import Footer from "./components/Footer";
@@ -37,6 +38,7 @@ const App = () => {
                 <Route path="/blog/:slug" element={<BlogPost />} />
                 <Route path="/work" element={<Work />} />
                 <Route path="/admin" element={<Admin />} />
+                <Route path="/resume" element={<ViewResume />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
               </Routes>
