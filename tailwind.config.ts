@@ -183,5 +183,8 @@ export default {
 		}
 	},
 	plugins: [require("tailwindcss-animate")],
-	
-} satisfies Config;
+	hint: { 
+		enabled: true,
+		content: "This is a hint"
+		
+	} satisfies Config;
